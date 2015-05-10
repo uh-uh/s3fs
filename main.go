@@ -54,7 +54,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handlePost(w http.ResponseWriter, r *http.Request) {
 	// TODO: make error response in case of failure
-	file, header, err := r.FormFile("key")
+	file, _, err := r.FormFile("doc")
 	if err != nil {
 		log.Println("form", err)
 		return
@@ -62,9 +62,9 @@ func (s *Server) handlePost(w http.ResponseWriter, r *http.Request) {
 	defer file.Close()
 
 	filename := r.URL.Path
-	log.Println("handling POST:", filename, header)
-	targetPath := s.getContentPath(filename)
-	content, err := os.OpenFile(targetPath, os.O_WRONLY|os.O_CREATE, 0666)
+	vFilename := fmt.Sprintf("%s-%s", filename, timestamp())
+
+	content, err := os.OpenFile(s.getContentPath(vFilename, false), os.O_WRONLY|os.O_CREATE, 0666)
 	if err != nil {
 		log.Println("error to create file:", err)
 		return
@@ -72,7 +72,7 @@ func (s *Server) handlePost(w http.ResponseWriter, r *http.Request) {
 	io.Copy(content, file)
 	content.Close()
 
-	err = renameSymlink(s.getReadPath(filename), targetPath)
+	err = renameSymlink(s.getReadPath(filename), s.getContentPath(vFilename, true))
 	if err != nil {
 		log.Println("error to update file:", err)
 	}
@@ -90,14 +90,17 @@ func (s *Server) getReadPath(filename string) string {
 	return filepath.Join(s.Dir, "latest", filename)
 }
 
-func (s *Server) getContentPath(filename string) string {
-	return filepath.Join("..", "content", filename+timestamp())
+func (s *Server) getContentPath(filename string, link bool) string {
+	if link {
+		return filepath.Join("..", "content", filename)
+	}
+	return filepath.Join(s.Dir, "content", filename)
 }
 
 // Helper functions.
 
 func renameSymlink(link, target string) error {
-	return exec.Command("ln", "-s", target, link).Run()
+	return exec.Command("ln", "-fs", target, link).Run()
 }
 
 func timestamp() string {
